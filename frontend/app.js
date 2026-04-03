@@ -18,7 +18,7 @@ const state = {
 // API
 // ===========================
 function getApiBase() {
-  return (document.getElementById('api-url-input').value || 'http://localhost:8989/api').replace(/\/$/, '');
+  return (document.getElementById('api-url-input').value || 'http://89.207.255.163:8989/api').replace(/\/$/, '');
 }
 
 async function apiFetch(path, options = {}) {
