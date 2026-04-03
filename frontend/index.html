@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visa Monitor — Панель управления</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🛂</div>
+      <span class="logo-text">VisaMonitor</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-view="clients" id="nav-clients">
+        <span class="nav-icon">👥</span>
+        <span>Аккаунты</span>
+      </a>
+      <a href="#" class="nav-item" data-view="groups" id="nav-groups">
+        <span class="nav-icon">🗂️</span>
+        <span>Группы</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="api-status" id="api-status">
+        <span class="status-dot"></span>
+        <span class="status-text">Подключение...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main" id="main">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="page-title" id="page-title">Аккаунты</h1>
+      </div>
+      <div class="topbar-right">
+        <div class="api-config">
+          <label for="api-url-input">API URL:</label>
+          <input type="text" id="api-url-input" class="api-url-input" value="http://localhost:8989/api" placeholder="http://89.207.255.163:8989/api" />
+        </div>
+        <button class="btn btn-primary" id="add-client-btn">
+          <span>＋</span> Добавить аккаунт
+        </button>
+      </div>
+    </header>
+
+    <!-- Clients View -->
+    <section class="view active" id="view-clients">
+      <div class="filters-bar">
+        <input type="text" class="search-input" id="search-clients" placeholder="Поиск по email..." />
+        <select class="filter-select" id="filter-type">
+          <option value="">Все типы</option>
+          <option value="resident">Резиденты</option>
+          <option value="non-resident">Нерезиденты</option>
+        </select>
+        <select class="filter-select" id="filter-active">
+          <option value="">Все статусы</option>
+          <option value="true">Активные</option>
+          <option value="false">Неактивные</option>
+        </select>
+        <button class="btn btn-ghost" id="refresh-clients-btn">🔄 Обновить</button>
+      </div>
+
+      <div class="table-container" id="clients-table-container">
+        <table class="data-table" id="clients-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Email</th>
+              <th>Тип</th>
+              <th>Статус</th>
+              <th>Групп</th>
+              <th>Очередь</th>
+              <th>Обработан</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="clients-tbody">
+            <tr><td colspan="8" class="loading-row"><div class="spinner"></div> Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination" id="clients-pagination"></div>
+    </section>
+
+    <!-- Groups View -->
+    <section class="view" id="view-groups">
+      <div class="groups-header">
+        <div class="client-selector-bar">
+          <label>Аккаунт:</label>
+          <select id="group-client-select" class="filter-select">
+            <option value="">— Выберите аккаунт —</option>
+          </select>
+          <button class="btn btn-ghost" id="refresh-groups-btn">🔄 Обновить</button>
+        </div>
+      </div>
+      <div id="groups-container">
+        <div class="empty-state">
+          <div class="empty-icon">🗂️</div>
+          <p>Выберите аккаунт для просмотра групп</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: Add/Edit Client -->
+  <div class="modal-overlay" id="client-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="client-modal-title">Добавить аккаунт</h2>
+        <button class="modal-close" id="client-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="client-form">
+          <div class="form-group">
+            <label class="form-label">Email аккаунта <span class="required">*</span></label>
+            <input type="email" class="form-input" id="client-email" placeholder="client@example.com" required />
+          </div>
+          <div class="form-group" id="password-group">
+            <label class="form-label">Пароль <span class="required">*</span></label>
+            <input type="password" class="form-input" id="client-password" placeholder="Минимум 6 символов" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Тип клиента</label>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn active" id="type-non-resident" data-value="false">Нерезидент</button>
+              <button type="button" class="toggle-btn" id="type-resident" data-value="true">Резидент</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email компании</label>
+            <input type="email" class="form-input" id="client-company-email" placeholder="company@example.com (опционально)" />
+          </div>
+          <div class="form-group" id="manual-groups-group" style="display:none;">
+            <label class="form-label">Группы (ручной режим)</label>
+            <div id="manual-groups-list">
+              <div class="manual-group-item" data-index="0">
+                <div class="form-row">
+                  <div class="form-col">
+                    <label class="form-label-sm">Schedule Path</label>
+                    <input type="text" class="form-input" name="schedulePath" placeholder="/ru-kz/niv/schedule/12345/appointment" />
+                  </div>
+                  <div class="form-col" style="max-width:160px">
+                    <label class="form-label-sm">Статус</label>
+                    <select class="form-input" name="status">
+                      <option value="register">register</option>
+                      <option value="attend">attend</option>
+                      <option value="pay_fee">pay_fee</option>
+                    </select>
+                  </div>
+                  <button type="button" class="btn-remove-group" onclick="this.closest('.manual-group-item').remove()">✕</button>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" id="add-group-btn">＋ Добавить группу</button>
+          </div>
+          <div class="form-row" style="margin-top:8px;">
+            <label class="form-label" style="margin:0;align-self:center;">Ручной режим (задать группы вручную)</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="manual-mode-toggle" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="client-modal-cancel">Отмена</button>
+        <button class="btn btn-primary" id="client-modal-save">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Setup Matching -->
+  <div class="modal-overlay" id="matching-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Настройка поиска слотов</h2>
+        <button class="modal-close" id="matching-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="matching-form">
+          <input type="hidden" id="matching-client-id" />
+          <input type="hidden" id="matching-group-id" />
+          <div class="matching-group-info" id="matching-group-info"></div>
+          <div class="form-group">
+            <label class="form-label">Город <span class="required">*</span></label>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn active" id="city-astana" data-value="astana">🏙️ Астана</button>
+              <button type="button" class="toggle-btn" id="city-almaty" data-value="almaty">🌆 Алматы</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-col">
+              <label class="form-label">Дата С <span class="required">*</span></label>
+              <div class="datepicker-wrap" id="dp-start-wrap">
+                <input type="text" class="form-input datepicker-input" id="slot-start-date" placeholder="дд.мм.гггг" readonly />
+                <span class="datepicker-icon">📅</span>
+                <div class="datepicker-popup" id="dp-start-popup"></div>
+              </div>
+            </div>
+            <div class="form-col">
+              <label class="form-label">Дата ПО <span class="required">*</span></label>
+              <div class="datepicker-wrap" id="dp-end-wrap">
+                <input type="text" class="form-input datepicker-input" id="slot-end-date" placeholder="дд.мм.гггг" readonly />
+                <span class="datepicker-icon">📅</span>
+                <div class="datepicker-popup" id="dp-end-popup"></div>
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-col">
+              <label class="form-label">Задержка (дней)</label>
+              <input type="number" class="form-input" id="delay-days" value="0" min="0" />
+            </div>
+            <div class="form-col">
+              <label class="form-label">Кол-во участников</label>
+              <input type="number" class="form-input" id="applicants-count" min="1" placeholder="1" />
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="form-row" style="align-items:center;">
+              <label class="form-label" style="margin:0;">Автозапись</label>
+              <label class="toggle-switch">
+                <input type="checkbox" id="auto-book-toggle" />
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="hint">Бот сам запишет при нахождении слота</span>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="matching-modal-cancel">Отмена</button>
+        <button class="btn btn-primary" id="matching-modal-save">Сохранить настройки</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

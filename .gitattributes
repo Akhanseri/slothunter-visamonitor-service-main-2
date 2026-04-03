@@ -1,0 +1,3 @@
+# SSH private keys should never be committed
+gitlab_deploy_key filter=secret diff=secret merge=secret
+gitlab_deploy_key.pub filter=secret diff=secret merge=secret

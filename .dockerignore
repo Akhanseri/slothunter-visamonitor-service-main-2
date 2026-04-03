@@ -1,0 +1,6 @@
+# Игнорируем собранные файлы - они будут собраны в Docker
+**/dist/
+**/node_modules/
+**/.git/
+**/tsconfig.tsbuildinfo
+**/*.log

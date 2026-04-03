@@ -1,0 +1,213 @@
+# GitLab CI/CD Pipeline для Visa Monitor
+# 
+# Требуемые GitLab CI/CD Variables (Settings > CI/CD > Variables):
+# - DOCKER_HUB_USERNAME: ваш username в Docker Hub
+# - DOCKER_HUB_TOKEN: access token из Docker Hub (https://hub.docker.com/settings/security)
+# - PRODUCTION_SERVER_HOST: IP или домен production сервера (например: 89.207.255.163)
+# - PRODUCTION_SERVER_USER: SSH пользователь для деплоя (например: deploy)
+# - PRODUCTION_SERVER_SSH_KEY: приватный SSH ключ для доступа к серверу (тип: File)
+# - PRODUCTION_ENV_FILE: содержимое .env.production файла (тип: File)
+
+stages:
+  - build
+  - push
+  - deploy
+
+variables:
+  DOCKER_HOST: unix:///var/run/docker.sock
+  # Имена образов - ЗАМЕНИТЕ на ваш Docker Hub username
+  # Например: DOCKER_REGISTRY: myusername
+  DOCKER_REGISTRY: ${DOCKER_HUB_USERNAME}
+  IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
+
+# Шаблон для Docker операций
+.docker_template: &docker_template
+  image: docker:latest
+  before_script:
+    - echo "Logging in to Docker Hub..."
+    - echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+    - apk add --no-cache git
+
+# ==================== BUILD STAGE ====================
+# Сборка всех Docker образов
+
+build:migrations:
+  <<: *docker_template
+  stage: build
+  script:
+    - echo "Building migrations image..."
+    - |
+      docker build \
+        -f Dockerfile.migrations \
+        -t $DOCKER_REGISTRY/visamonitor-migrations:$IMAGE_TAG \
+        -t $DOCKER_REGISTRY/visamonitor-migrations:build-$CI_PIPELINE_ID \
+        .
+    - docker push $DOCKER_REGISTRY/visamonitor-migrations:$IMAGE_TAG
+    - docker push $DOCKER_REGISTRY/visamonitor-migrations:build-$CI_PIPELINE_ID
+  tags:
+    - prod
+  only:
+    - main
+    - develop
+    - tags
+
+build:api:
+  <<: *docker_template
+  stage: build
+  script:
+    - echo "Building API service image..."
+    - |
+      docker build \
+        -f services/api/Dockerfile \
+        -t $DOCKER_REGISTRY/visamonitor-api:$IMAGE_TAG \
+        -t $DOCKER_REGISTRY/visamonitor-api:build-$CI_PIPELINE_ID \
+        .
+    - docker push $DOCKER_REGISTRY/visamonitor-api:$IMAGE_TAG
+    - docker push $DOCKER_REGISTRY/visamonitor-api:build-$CI_PIPELINE_ID
+  tags:
+    - prod
+  only:
+    - main
+    - develop
+    - tags
+
+build:parser:
+  <<: *docker_template
+  stage: build
+  script:
+    - echo "Building Parser service image..."
+    - |
+      docker build \
+        -f services/parser/Dockerfile \
+        -t $DOCKER_REGISTRY/visamonitor-parser:$IMAGE_TAG \
+        -t $DOCKER_REGISTRY/visamonitor-parser:build-$CI_PIPELINE_ID \
+        .
+    - docker push $DOCKER_REGISTRY/visamonitor-parser:$IMAGE_TAG
+    - docker push $DOCKER_REGISTRY/visamonitor-parser:build-$CI_PIPELINE_ID
+  tags:
+    - prod
+  only:
+    - main
+    - develop
+    - tags
+
+# ==================== PUSH STAGE ====================
+# Тегирование образов как latest (только для main ветки)
+
+push:latest:
+  <<: *docker_template
+  stage: push
+  script:
+    - echo "Tagging images as latest..."
+    # Migrations
+    - docker pull $DOCKER_REGISTRY/visamonitor-migrations:$IMAGE_TAG
+    - docker tag $DOCKER_REGISTRY/visamonitor-migrations:$IMAGE_TAG $DOCKER_REGISTRY/visamonitor-migrations:latest
+    - docker push $DOCKER_REGISTRY/visamonitor-migrations:latest
+    # API
+    - docker pull $DOCKER_REGISTRY/visamonitor-api:$IMAGE_TAG
+    - docker tag $DOCKER_REGISTRY/visamonitor-api:$IMAGE_TAG $DOCKER_REGISTRY/visamonitor-api:latest
+    - docker push $DOCKER_REGISTRY/visamonitor-api:latest
+    # Parser
+    - docker pull $DOCKER_REGISTRY/visamonitor-parser:$IMAGE_TAG
+    - docker tag $DOCKER_REGISTRY/visamonitor-parser:$IMAGE_TAG $DOCKER_REGISTRY/visamonitor-parser:latest
+    - docker push $DOCKER_REGISTRY/visamonitor-parser:latest
+    - echo "All images tagged as latest and pushed successfully"
+  dependencies:
+    - build:migrations
+    - build:api
+    - build:parser
+  tags:
+    - prod
+  only:
+    - main
+
+# ==================== DEPLOY STAGE ====================
+# Деплой на production сервер
+
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client rsync bash
+    # Создаем SSH ключ из переменной
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$PRODUCTION_SERVER_SSH_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    # Добавляем хост в known_hosts
+    - ssh-keyscan -H $PRODUCTION_SERVER_HOST >> ~/.ssh/known_hosts 2>/dev/null
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - echo "Deploying to production server..."
+    - echo "Server $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_HOST"
+    - echo "Creating directory on server..."
+    - ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_HOST "mkdir -p ~/visamonitor/deploy"
+    - echo "Copying deploy files..."
+    - |
+      rsync -avz --delete --exclude='.env*' --exclude='backups/' -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa" \
+        deploy/ \
+        $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_HOST:~/visamonitor/deploy/
+    - echo "Checking .env.production file..."
+    - |
+      # Проверяем существует ли .env.production на сервере
+      if ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_HOST "test -f ~/visamonitor/deploy/.env.production"; then
+        echo "✅ .env.production exists on server - keeping it"
+      else
+        echo "⚠️ .env.production NOT found on server!"
+        if [ -f "$PRODUCTION_ENV_FILE" ]; then
+          echo "Copying from PRODUCTION_ENV_FILE variable..."
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+            $PRODUCTION_ENV_FILE \
+            $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_HOST:~/visamonitor/deploy/.env.production
+        else
+          echo "❌ ERROR: .env.production missing and PRODUCTION_ENV_FILE not set!"
+          exit 1
+        fi
+      fi
+    - echo "Running deploy script on server..."
+    - |
+      ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_HOST bash << EOF
+        cd ~/visamonitor/deploy
+        chmod +x deploy.sh
+        export DOCKER_HUB_USERNAME="$DOCKER_HUB_USERNAME"
+        export IMAGE_TAG="$IMAGE_TAG"
+        ./deploy.sh
+      EOF
+    - echo "Deployment completed successfully!"
+  dependencies:
+    - push:latest
+  tags:
+    - prod
+  only:
+    - main
+  when: manual  # Требует ручного подтверждения для безопасности
+
+# ==================== ROLLBACK ====================
+# Откат к предыдущей версии (ручной запуск)
+
+rollback:production:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client bash
+    # Создаем SSH ключ из переменной
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$PRODUCTION_SERVER_SSH_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    # Добавляем хост в known_hosts
+    - ssh-keyscan -H $PRODUCTION_SERVER_HOST >> ~/.ssh/known_hosts 2>/dev/null
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - echo "Rolling back to previous version..."
+    - |
+      ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_HOST << EOF
+        cd ~/visamonitor/deploy
+        chmod +x deploy.sh
+        ./deploy.sh rollback
+      EOF
+    - echo "Rollback completed!"
+  only:
+    - main
+  when: manual
+

@@ -1,0 +1,26 @@
+{
+  "name": "@visa-monitor/shared",
+  "version": "1.0.0",
+  "description": "Shared types, entities and enums for Visa Monitor",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "migration:run": "ts-node -r tsconfig-paths/register src/run-migrations.ts"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "https-proxy-agent": "^7.0.2",
+    "pg": "^8.11.3",
+    "reflect-metadata": "^0.1.13",
+    "typeorm": "^0.3.17",
+    "undici": "^6.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.3.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.1.3"
+  }
+}
